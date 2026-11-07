@@ -12,10 +12,10 @@
  * before launch so a completion reminder cannot drag the tangent back into the parent's work.
  */
 
-import { existsSync, readdirSync } from "node:fs";
-import { open, readdir, stat } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { open, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { basename, delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import {
 	checked, collectForks, detectTerminal, manageForks, parseManagementCommand,
@@ -37,7 +37,6 @@ You are a side fork created solely to handle the user's request below.
 - After answering the side request and completing any todos you created yourself, stop.
 </system-notice>`;
 const POLL_MS = 750;
-const DISCOVER_LIMIT_MS = 60_000;
 const PULL_LIMIT_MS = 30 * 60_000;
 const TERMINAL_TIMEOUT_MS = 15_000;
 
@@ -1030,23 +1029,12 @@ function assistantText(line: string): string | null {
 }
 
 /**
- * Watch for the fork this spawn created and hand its first answer back as hidden
+ * Watch the fork this spawn created and hand its first answer back as hidden
  * next-turn context. One-shot: the watcher stops after the first delivery.
  */
-function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, parentFile: string): void {
-	const parentId = ctx.sessionManager.getSessionId();
-	const dir = dirname(parentFile);
+function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, forkFile: string): void {
 	const startedAt = Date.now();
-	// Session files are never renamed, so "a name that did not exist when we spawned"
-	// identifies our fork exactly. mtime cannot: a sibling fork shutting down rewrites its own.
-	let known: Set<string>;
-	try {
-		known = new Set(readdirSync(dir));
-	} catch {
-		return;
-	}
-	let forkFile: string | null = null;
-	let offset = 0;
+	let offset = statSync(forkFile).size;
 	let busy = false;
 
 	const timer = ctx.setInterval(() => {
@@ -1054,16 +1042,6 @@ function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, parentFile: string):
 		busy = true;
 		void (async () => {
 			try {
-				if (!forkFile) {
-					if (Date.now() - startedAt > DISCOVER_LIMIT_MS) {
-						ctx.clearTimer(timer);
-						return;
-					}
-					forkFile = await findFork(dir, known, parentId);
-					if (!forkFile) return;
-					offset = await lastNewlineOffset(forkFile);
-					return;
-				}
 				if (Date.now() - startedAt > PULL_LIMIT_MS) {
 					ctx.clearTimer(timer);
 					return;
@@ -1087,59 +1065,6 @@ function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, parentFile: string):
 			}
 		})();
 	}, POLL_MS);
-}
-
-async function findFork(dir: string, known: Set<string>, parentId: string): Promise<string | null> {
-	let names: string[];
-	try {
-		names = await readdir(dir);
-	} catch {
-		return null;
-	}
-	for (const name of names) {
-		if (!name.endsWith(".jsonl") || known.has(name)) continue;
-		const candidate = join(dir, name);
-		if (!(await isForkOf(candidate, parentId))) {
-			// Someone else's new session: never look at it again.
-			known.add(name);
-			continue;
-		}
-		return candidate;
-	}
-	return null;
-}
-
-async function isForkOf(file: string, parentId: string): Promise<boolean> {
-	let handle: FileHandle | null = null;
-	try {
-		handle = await open(file, "r");
-		const buffer = Buffer.alloc(4096);
-		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-		return buffer.subarray(0, bytesRead).toString("utf8").includes(`"parentSession":"${parentId}"`);
-	} catch {
-		return false;
-	} finally {
-		await handle?.close();
-	}
-}
-
-/** Byte offset just past the final complete line, so partial writes are never consumed. */
-async function lastNewlineOffset(file: string): Promise<number> {
-	const size = (await stat(file)).size;
-	if (size === 0) return 0;
-	const window = Math.min(size, 65_536);
-	let handle: FileHandle | null = null;
-	try {
-		handle = await open(file, "r");
-		const buffer = Buffer.alloc(window);
-		const { bytesRead } = await handle.read(buffer, 0, window, size - window);
-		const index = buffer.subarray(0, bytesRead).lastIndexOf(0x0a);
-		return index === -1 ? 0 : size - bytesRead + index + 1;
-	} catch {
-		return size;
-	} finally {
-		await handle?.close();
-	}
 }
 
 async function readNewAssistantText(
@@ -1248,7 +1173,7 @@ async function openSide(pi: ExtensionAPI, ctx: ExtensionCommandContext, request:
 		}`,
 		"info",
 	);
-	if (request.pull) watchFork(pi, ctx, sessionFile);
+	if (request.pull) watchFork(pi, ctx, childSessionFile);
 }
 
 function reinjectSideContext(pi: ExtensionAPI, ctx: ExtensionContext): void {

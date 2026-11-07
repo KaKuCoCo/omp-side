@@ -30,27 +30,31 @@ the child does can affect the main conversation unless you ask for its first ans
 - One supported terminal environment:
   - cmux
   - tmux
-  - Tern, with the `tern` CLI on `PATH` or Tern.app in `/Applications`
+  - Tern, with the `tern` CLI on `PATH` or Tern.app in `/Applications`. On Windows, Tern's
+    install folder (with `tern.com`) must be on `PATH`.
   - WezTerm with `wezterm cli`
   - Kitty with remote control available through `kitten @`
   - Ghostty on macOS or Linux
-- macOS or Linux
+- macOS or Linux, or Windows with Tern (see [Windows](#windows))
 
 ## Install
 
 ```sh
-omp plugin install omp-side
+omp plugin install github:KaKuCoCo/omp-side
 ```
 
 Restart omp. Extensions load at startup, so the session you are in when you install will not have `/side` yet.
 
-Prefer a checkout? Clone the repository and symlink its entry module instead. Keep
-`side-management.ts` alongside `index.ts` in the checkout:
+Prefer a checkout? Clone the repository and install its folder. omp links the checkout, so edits
+take effect on the next start:
 
 ```sh
-git clone https://github.com/wolfiesch/omp-side.git
-ln -s "$PWD/omp-side/index.ts" ~/.omp/agent/extensions/omp-side.ts
+git clone https://github.com/KaKuCoCo/omp-side.git
+omp plugin install ./omp-side
 ```
+
+To try it without installing, load the entry module for one session:
+`omp -e ./omp-side/index.ts`. Keep `side-management.ts` alongside `index.ts` in the checkout.
 
 Use one method or the other. Both at once registers the command twice.
 ## Usage
@@ -148,8 +152,7 @@ and an already split tab gets a new tab. Repeat-fork grouping is available in tm
 
 The side session runs on its own. With `--pull`, this extension tails the fork's session file, and
 the first assistant answer it produces is queued into your main session as context attached to your
-next message. It is one shot. The watcher stops after that answer, after 30 minutes, or if the fork
-never appears within a minute.
+next message. It is one shot. The watcher stops after that answer or after 30 minutes.
 
 Everything stays local. The watcher reads a file on disk and nothing else.
 
@@ -171,6 +174,16 @@ splits are a right or down split followed by `tern move`, because `tern split` o
 down.
 Direct Ghostty uses a separate window without keyboard simulation or accessibility scripting.
 Unsupported terminals fail visibly instead of typing a command into an unknown UI.
+
+### Windows
+
+On Windows, `/side` supports Tern only; the other adapters are untested there. Tern starts a pane's
+command through your Tern shell and reports that shell command for each pane. `/side list`,
+`focus`, and `close` find a fork's pane by reading that command with PowerShell quoting rules.
+This was verified with PowerShell 7 as Tern's shell; other Tern shells are untested, and a pane
+whose command cannot be read shows as `unverified`, which focus and close refuse. Inside `/side`
+flags, put Windows paths in single quotes (`'C:\notes\x.md'`), because an unquoted `\` escapes
+the next character.
 
 ## How it works
 
@@ -222,8 +235,6 @@ not child obligations, and an incomplete-todo reminder cannot resume the parent'
 ```sh
 omp plugin uninstall omp-side
 ```
-
-Or remove the symlink if you installed it that way.
 
 ## License
 

@@ -223,8 +223,6 @@ not child obligations, and an incomplete-todo reminder cannot resume the parent'
   has no file, and `/side` will say so instead of silently opening an unrelated blank session.
 - **The last moments of an in-flight turn may not be on disk.** Extensions cannot force a session
   flush, so a fork taken mid-turn can miss a tool result that has not been written yet.
-- **`alt+s` is unverified.** It is registered, but it could not be exercised through scripted key
-  injection, so confirm it by hand.
 - **Kitty remote control is configuration-dependent.** If `kitten @ ls` is denied, enable Kitty
   remote control using Kitty's documented permission controls. `/side` reports the CLI error.
 - **Direct Ghostty cannot inspect or modify the current tab layout.** Its supported fallback is a

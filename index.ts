@@ -968,6 +968,31 @@ async function launchGhostty(
 	return { target: "Ghostty window", terminal: "ghostty", placement: "window" };
 }
 
+/**
+ * Launch a prepared fork, deleting its session file only when the launch failed before any terminal
+ * command naming that file was sent. Once a command asked the terminal to start the fork, the fork
+ * may be running and writing to the file, even when that command or a later move, rename or focus failed.
+ */
+async function launchPreparedFork<T>(
+	run: Runner,
+	childSessionFile: string,
+	launch: (run: Runner) => Promise<T>,
+): Promise<T> {
+	const name = basename(childSessionFile);
+	let requested = false;
+	try {
+		return await launch((command, args) => {
+			if (args.some(arg => arg.includes(name))) requested = true;
+			return run(command, args);
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (requested) throw new Error(`${message}; the fork may already be open, so its session is kept: ${childSessionFile}`);
+		await rm(childSessionFile, { force: true });
+		throw error;
+	}
+}
+
 async function launchInTerminal(
 	run: Runner,
 	env: NodeJS.ProcessEnv,
@@ -1143,21 +1168,9 @@ async function openSide(pi: ExtensionAPI, ctx: ExtensionCommandContext, request:
 		sessionFile,
 		process.env,
 	);
-	let launched: LaunchResult;
-	try {
-		launched = await launchInTerminal(
-			createRunner(pi),
-			process.env,
-			process.platform,
-			{ ...request, sidePanes },
-			cwd,
-			argv,
-			paneTitle(request.prompt),
-		);
-	} catch (error) {
-		await rm(childSessionFile, { force: true });
-		throw error;
-	}
+	const launched = await launchPreparedFork(createRunner(pi), childSessionFile, run =>
+		launchInTerminal(run, process.env, process.platform, { ...request, sidePanes }, cwd, argv, paneTitle(request.prompt)),
+	);
 
 	pi.appendEntry(SPAWN_ENTRY, {
 		parentSessionFile: sessionFile,
@@ -1270,4 +1283,5 @@ export const __testing = {
 	hasProfileArg,
 	resolveActiveProfile,
 	buildChildArgv,
+	launchPreparedFork,
 };

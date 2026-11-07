@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { delimiter } from "node:path";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { __testing } from "./index";
 
 interface Call {
@@ -818,5 +820,76 @@ describe("profile propagation", () => {
 			"/sessions/child.jsonl",
 			"question",
 		]);
+	});
+});
+
+describe("prepared fork cleanup", () => {
+	const ternBlocks = JSON.stringify({ sessions: [{ id: 40, tabs: [{ blocks: [{ id: 41, cols: 100, rows: 40 }] }] }] });
+	const withChild = async (body: (child: string) => Promise<void>) => {
+		const dir = mkdtempSync(join(tmpdir(), "omp-side-o'brien-"));
+		const child = join(dir, "2026-11-08T00-00-00-000Z_0d6c.jsonl");
+		writeFileSync(child, "{}\n");
+		try {
+			await body(child);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	const launchTern = (child: string, respond: Parameters<typeof runner>[0], request = { ...baseRequest, focus: false }) =>
+		__testing.launchPreparedFork(runner(respond).run, child, run =>
+			__testing.launchInTerminal(
+				run,
+				{ TERM_PROGRAM: "tern", TERN_PANE: "41" },
+				"linux",
+				request,
+				"/tmp",
+				["/opt/bin/omp", "--resume", child],
+				"side title",
+			),
+		);
+
+	test("deletes the fork when the launch fails before the terminal was asked to start it", async () => {
+		await withChild(async child => {
+			await expect(launchTern(child, () => ({ code: 1, stderr: "no daemon" }))).rejects.toThrow("no daemon");
+			expect(existsSync(child)).toBe(false);
+		});
+	});
+
+	test.each([
+		["the tab's rename fails after it opened", (args: string[]) =>
+			args[0] === "inspect" ? { stdout: ternBlocks } : args[0] === "new" ? { stdout: '{"block":44}' } : { code: 1, stderr: "rename failed" }],
+		["the start command itself fails, so whether it ran is unknown", (args: string[]) =>
+			args[0] === "inspect" ? { stdout: ternBlocks } : { code: 1, stderr: "timed out" }],
+	])("keeps the fork when %s", async (_name, respond) => {
+		await withChild(async child => {
+			await expect(launchTern(child, (_command, args) => respond(args))).rejects.toThrow("its session is kept");
+			expect(existsSync(child)).toBe(true);
+		});
+	});
+
+	test("keeps the fork when focusing an opened split fails", async () => {
+		await withChild(async child => {
+			const respond = (_command: string, args: string[]) =>
+				args[0] === "inspect"
+					? { stdout: JSON.stringify({ sessions: [{ id: 40, tabs: [{ blocks: [{ id: 41, cols: 288, rows: 85 }] }] }] }) }
+					: args[0] === "split" ? { stdout: '{"block":42}' } : { code: 1, stderr: "focus failed" };
+			await expect(launchTern(child, respond, { ...baseRequest, focus: true })).rejects.toThrow("its session is kept");
+			expect(existsSync(child)).toBe(true);
+		});
+	});
+
+	test("keeps the fork when tmux quotes its path into one shell command", async () => {
+		await withChild(async child => {
+			const fake = runner((_command, args) =>
+				args[0] === "list-panes" ? { stdout: "%1\t300\t90\t0\t0\n" } : { code: 1, stderr: "timed out" },
+			);
+			await expect(
+				__testing.launchPreparedFork(fake.run, child, run =>
+					__testing.launchInTerminal(run, { TMUX: "/tmp/tmux", TMUX_PANE: "%1" }, "linux",
+						{ ...baseRequest, focus: false }, "/tmp", ["/opt/bin/omp", "--resume", child], "side title"),
+				),
+			).rejects.toThrow("its session is kept");
+			expect(existsSync(child)).toBe(true);
+		});
 	});
 });

@@ -13,7 +13,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { open, stat } from "node:fs/promises";
+import { open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, delimiter, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
@@ -1143,15 +1143,21 @@ async function openSide(pi: ExtensionAPI, ctx: ExtensionCommandContext, request:
 		sessionFile,
 		process.env,
 	);
-	const launched = await launchInTerminal(
-		createRunner(pi),
-		process.env,
-		process.platform,
-		{ ...request, sidePanes },
-		cwd,
-		argv,
-		paneTitle(request.prompt),
-	);
+	let launched: LaunchResult;
+	try {
+		launched = await launchInTerminal(
+			createRunner(pi),
+			process.env,
+			process.platform,
+			{ ...request, sidePanes },
+			cwd,
+			argv,
+			paneTitle(request.prompt),
+		);
+	} catch (error) {
+		await rm(childSessionFile, { force: true });
+		throw error;
+	}
 
 	pi.appendEntry(SPAWN_ENTRY, {
 		parentSessionFile: sessionFile,

@@ -12,7 +12,7 @@
  * before launch so a completion reminder cannot drag the tangent back into the parent's work.
  */
 
-import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, delimiter, dirname, join } from "node:path";
@@ -264,20 +264,11 @@ function parseRequest(raw: string): SideRequest {
 
 /** The running binary when it is the omp executable, else the first omp on PATH. */
 function resolveOmp(): string {
+	const names = process.platform === "win32" ? ["omp", "omp.exe"] : ["omp"];
 	for (const candidate of [process.argv[0], process.execPath]) {
-		if (candidate && basename(candidate).toLowerCase() === "omp") return candidate;
+		if (candidate && names.includes(basename(candidate).toLowerCase())) return candidate;
 	}
-	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-		if (!dir) continue;
-		const candidate = join(dir, "omp");
-		try {
-			accessSync(candidate, constants.X_OK);
-			if (statSync(candidate).isFile()) return candidate;
-		} catch {
-			// keep looking
-		}
-	}
-	return "omp";
+	return resolveOnPath(["omp"]);
 }
 
 function resolveProfileFromSessionPath(sessionPath: string): string | undefined {
@@ -987,7 +978,7 @@ async function launchInTerminal(
 	argv: string[],
 	title: string,
 ): Promise<LaunchResult> {
-	const command = commandWithRuntimePath(argv, env.PATH, process.execPath);
+	const command = platform === "win32" ? argv : commandWithRuntimePath(argv, env.PATH, process.execPath);
 	switch (detectTerminal(env)) {
 		case "cmux":
 			return launchCmux(run, env, request, cwd, command, title);

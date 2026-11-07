@@ -247,15 +247,19 @@ async function checkedJson(run: Runner, command: string, args: string[]): Promis
 }
 
 export function resolveOnPath(names: string[], path = process.env.PATH ?? ""): string {
+	const extensions =
+		process.platform === "win32" ? (process.env.PATHEXT ?? ".COM;.EXE").toLowerCase().split(";").filter(Boolean) : [""];
 	for (const name of names) {
 		for (const dir of path.split(delimiter)) {
 			if (!dir) continue;
-			const candidate = join(dir, name);
-			try {
-				accessSync(candidate, constants.X_OK);
-				if (statSync(candidate).isFile()) return candidate;
-			} catch {
-				// keep looking
+			for (const extension of extensions) {
+				const candidate = join(dir, name + extension);
+				try {
+					accessSync(candidate, constants.X_OK);
+					if (statSync(candidate).isFile()) return candidate;
+				} catch {
+					// keep looking
+				}
 			}
 		}
 	}
@@ -268,8 +272,12 @@ export function resolveTern(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): 
 	return existsSync(TERN_APP_BINARY) ? TERN_APP_BINARY : onPath;
 }
 
-/** Quote-aware tokenization for /side options and terminal launch-command identity checks. */
-export function tokenize(input: string): string[] {
+/**
+ * Quote-aware tokenization for /side options and terminal launch-command identity checks.
+ * PowerShell quoting keeps `\` literal and reads `''` inside single quotes as one quote; Tern on
+ * Windows reports pane commands that way.
+ */
+export function tokenize(input: string, powershell = false): string[] {
 	const out: string[] = [];
 	let current = "";
 	let quote: '"' | "'" | null = null;
@@ -278,8 +286,9 @@ export function tokenize(input: string): string[] {
 		const ch = input[index];
 		if (quote) {
 			if (ch === quote) {
-				quote = null;
-			} else if (quote === '"' && ch === "\\") {
+				if (powershell && quote === "'" && input[index + 1] === "'") current += input[++index];
+				else quote = null;
+			} else if (quote === '"' && ch === "\\" && !powershell) {
 				if (index + 1 >= input.length) throw new Error("trailing escape in /side flags");
 				current += input[++index];
 			} else {
@@ -292,7 +301,7 @@ export function tokenize(input: string): string[] {
 			quoted = true;
 			continue;
 		}
-		if (ch === "\\") {
+		if (ch === "\\" && !powershell) {
 			if (index + 1 >= input.length) throw new Error("trailing escape in /side flags");
 			current += input[++index];
 			continue;
@@ -313,12 +322,12 @@ export function tokenize(input: string): string[] {
 }
 
 /** Match the exact resumed session argument, never a substring of another file or prompt. */
-function resumesChild(command: string | string[], sessionFile: string): boolean {
+function resumesChild(command: string | string[], sessionFile: string, powershell = false): boolean {
 	let args: string[];
 	try {
-		args = typeof command === "string" ? tokenize(command) : command;
+		args = typeof command === "string" ? tokenize(command, powershell) : command;
 		// tmux serializes its single shell-command argument with an extra quoting layer.
-		if (typeof command === "string" && args.length === 1) args = tokenize(args[0]);
+		if (typeof command === "string" && args.length === 1) args = tokenize(args[0], powershell);
 	} catch {
 		return false;
 	}
@@ -401,7 +410,7 @@ const ternBackend: Backend = {
 			const block = blocks.get(id);
 			if (!block || block.live === false || (block.exited !== null && block.exited !== undefined)) return null;
 			const command = typeof block.command === "string" ? block.command : "";
-			return { runsChild: resumesChild(command, child), current: currentPane === id };
+			return { runsChild: resumesChild(command, child, ctx.platform === "win32"), current: currentPane === id };
 		};
 	},
 	focus: (ctx, target) => [[resolveTern(ctx.env, ctx.platform), ["focus", target.slice("block:".length)]]],

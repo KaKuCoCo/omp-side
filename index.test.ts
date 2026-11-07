@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { delimiter } from "node:path";
 import { __testing } from "./index";
 
 interface Call {
@@ -218,11 +219,12 @@ describe("terminal detection", () => {
 
 describe("child command PATH", () => {
 	test("prepends the active runtime directory once", () => {
-		expect(__testing.pathWithExecutableDir("/usr/bin:/bin", "/opt/runtime/bin/bun")).toBe(
-			"/opt/runtime/bin:/usr/bin:/bin",
+		const path = (...dirs: string[]) => dirs.join(delimiter);
+		expect(__testing.pathWithExecutableDir(path("/usr/bin", "/bin"), "/opt/runtime/bin/bun")).toBe(
+			path("/opt/runtime/bin", "/usr/bin", "/bin"),
 		);
-		expect(__testing.pathWithExecutableDir("/opt/runtime/bin:/usr/bin", "/opt/runtime/bin/bun")).toBe(
-			"/opt/runtime/bin:/usr/bin",
+		expect(__testing.pathWithExecutableDir(path("/opt/runtime/bin", "/usr/bin"), "/opt/runtime/bin/bun")).toBe(
+			path("/opt/runtime/bin", "/usr/bin"),
 		);
 		expect(__testing.pathWithExecutableDir("", "/opt/runtime/bin/bun")).toBe("/opt/runtime/bin");
 		expect(__testing.pathWithExecutableDir(undefined, "/opt/runtime/bin/bun")).toBeUndefined();
@@ -601,6 +603,26 @@ describe("terminal launch adapters", () => {
 		expect(fake.calls.slice(1).map((call) => call.args)).toEqual([
 			["split", "43", "right", "--json", "--cwd", "/tmp/a b", "--", ...argv],
 		]);
+	});
+
+	test("Tern on Windows starts the child argv directly, without /usr/bin/env", async () => {
+		const fake = runner((_command, args) =>
+			args[0] === "inspect"
+				? { stdout: ternTree([[41, 288, 85]]) }
+				: args[0] === "split"
+					? { stdout: JSON.stringify({ session: 40, tab: 50, block: 42 }) }
+					: {},
+		);
+		await __testing.launchInTerminal(
+			fake.run,
+			{ TERM_PROGRAM: "tern", TERN_PANE: "41", PATH: "C:\\Windows\\System32" },
+			"win32",
+			{ ...baseRequest, focus: false },
+			"D:\\a b",
+			argv,
+			"side title",
+		);
+		expect(fake.calls[1].args).toEqual(["split", "41", "right", "--json", "--cwd", "D:\\a b", "--", ...argv]);
 	});
 
 	test("Kitty opens a new tab and preserves each command argument", async () => {

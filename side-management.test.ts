@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	CLOSED_ENTRY_TYPE,
 	SPAWN_ENTRY_TYPE,
 	collectForks,
 	manageForks,
 	parseManagementCommand,
+	resolveOnPath,
 	terminalScope,
 	terminalSource,
 	type ForkData,
@@ -444,6 +448,25 @@ describe("manageForks per terminal", () => {
 		expect(focus.mutations()).toEqual(["tern focus 200"]);
 	});
 
+	test("tern on Windows matches the PowerShell-quoted command Tern reports", async () => {
+		const env = { TERM_PROGRAM: "tern", TERN_PANE: "100", TERN_WINDOW_KEY: "w1", PATH: "" };
+		const child = "C:\\Users\\o'brien\\.omp\\agent\\sessions\\D--work\\child.jsonl";
+		const reported = {
+			200: "C:\\Users\\me\\.bun\\bin\\omp.exe --cwd 'D:\\a b' --resume C:\\Users\\me\\.omp\\agent\\sessions\\D--work\\child.jsonl",
+			300: "& 'C:\\Program Files\\omp\\omp.exe' --resume 'C:\\Users\\o''brien\\.omp\\agent\\sessions\\D--work\\child.jsonl' 'why?'",
+		};
+		const inspect = JSON.stringify({
+			sessions: [{ tabs: [{ blocks: Object.entries(reported).map(([id, command]) => ({ id: Number(id), live: true, exited: null, command })) }] }],
+		});
+		const respond = (_command: string, args: string[]): Reply => (args[0] === "inspect" ? { stdout: inspect } : {});
+		for (const [id, childSessionFile] of [[200, child.replace("o'brien", "me")], [300, child]] as const) {
+			const h = harness(env, respond);
+			const options = { ...h.options, platform: "win32" as const };
+			await manageForks({ action: "focus", number: 1 }, [fork(env, "tern", { target: `block:${id}`, childSessionFile })], options);
+			expect(h.mutations()).toEqual([`tern focus ${id}`]);
+		}
+	});
+
 	test("wezterm checks the pane list and not the prefix of an id", async () => {
 		const env = { WEZTERM_PANE: "1", WEZTERM_UNIX_SOCKET: "/tmp/wz", PATH: "" };
 		const respond = (_command: string, args: string[]): Reply => (args[0] === "cli" && args[1] === "list" ? { stdout: JSON.stringify([{ pane_id: 1 }, { pane_id: 55 }]) } : {});
@@ -518,5 +541,17 @@ describe("manageForks per terminal", () => {
 		const focus = harness(env, respond);
 		await manageForks({ action: "focus", number: 1 }, [fork(env, "cmux", { target: "surface:12" })], focus.options);
 		expect(focus.mutations()).toEqual(["cmux focus-panel --panel surface:12 --workspace workspace:1"]);
+	});
+});
+
+describe("resolveOnPath", () => {
+	test.skipIf(process.platform !== "win32")("finds a Windows executable through PATHEXT, not a bare file", () => {
+		const dir = mkdtempSync(join(tmpdir(), "omp-side-"));
+		try {
+			for (const name of ["tern", "tern.com", "tern.exe"]) writeFileSync(join(dir, name), "");
+			expect(resolveOnPath(["tern"], dir)).toBe(join(dir, "tern.com"));
+		} finally {
+			rmSync(dir, { recursive: true });
+		}
 	});
 });

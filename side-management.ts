@@ -178,7 +178,8 @@ export function terminalScope(terminal: TerminalKind, env: NodeJS.ProcessEnv): s
 			parts = (env.TMUX ?? "").split(",").slice(0, 2);
 			break;
 		case "tern":
-			parts = [env.TERN_DAEMON_SOCKET, env.TERN_WINDOW_KEY];
+			// The daemon the tern CLI routes to: TERN_DAEMON_SOCKET when set, else the pane's TERN_PANE_SOCKET.
+			parts = [env.TERN_DAEMON_SOCKET || env.TERN_PANE_SOCKET, env.TERN_WINDOW_KEY];
 			break;
 		case "cmux":
 			parts = [env.CMUX_SOCKET_PATH, env.CMUX_WORKSPACE_ID];

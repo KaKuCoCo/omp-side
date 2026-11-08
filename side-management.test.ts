@@ -108,6 +108,12 @@ describe("terminalScope and terminalSource", () => {
 		expect(terminalScope("tern", { TERN_DAEMON_SOCKET: "/a", TERN_WINDOW_KEY: "w" })).not.toBe(
 			terminalScope("tern", { TERN_DAEMON_SOCKET: "/b", TERN_WINDOW_KEY: "w" }),
 		);
+		expect(terminalScope("tern", { TERN_PANE_SOCKET: "\\\\.\\pipe\\tern-a", TERN_WINDOW_KEY: "" })).not.toBe(
+			terminalScope("tern", { TERN_PANE_SOCKET: "\\\\.\\pipe\\tern-b", TERN_WINDOW_KEY: "" }),
+		);
+		expect(terminalScope("tern", { TERN_DAEMON_SOCKET: "", TERN_PANE_SOCKET: "/a", TERN_WINDOW_KEY: "w" })).toBe(
+			terminalScope("tern", { TERN_DAEMON_SOCKET: "/a", TERN_WINDOW_KEY: "w" }),
+		);
 		expect(terminalScope("cmux", { CMUX_WORKSPACE_ID: "workspace:1" })).not.toBe(
 			terminalScope("cmux", { CMUX_WORKSPACE_ID: "workspace:2" }),
 		);

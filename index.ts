@@ -1056,10 +1056,11 @@ function assistantText(line: string): string | null {
 /**
  * Watch the fork this spawn created and hand its first answer back as hidden
  * next-turn context. One-shot: the watcher stops after the first delivery.
+ * `offset` is the prepared file's size before launch, so an answer the fork
+ * writes while the terminal is still opening it is not skipped.
  */
-function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, forkFile: string): void {
+function watchFork(pi: ExtensionAPI, ctx: ExtensionContext, forkFile: string, offset: number): void {
 	const startedAt = Date.now();
-	let offset = statSync(forkFile).size;
 	let busy = false;
 
 	const timer = ctx.setInterval(() => {
@@ -1160,6 +1161,7 @@ async function openSide(pi: ExtensionAPI, ctx: ExtensionCommandContext, request:
 		cwd,
 		(sourcePath, childCwd, sessionDir) => managerClass.forkFrom!(sourcePath, childCwd, sessionDir),
 	);
+	const preparedSize = statSync(childSessionFile).size;
 	const argv = buildChildArgv(
 		resolveOmp(),
 		cwd,
@@ -1192,7 +1194,7 @@ async function openSide(pi: ExtensionAPI, ctx: ExtensionCommandContext, request:
 		}`,
 		"info",
 	);
-	if (request.pull) watchFork(pi, ctx, childSessionFile);
+	if (request.pull) watchFork(pi, ctx, childSessionFile, preparedSize);
 }
 
 function reinjectSideContext(pi: ExtensionAPI, ctx: ExtensionContext): void {
@@ -1284,4 +1286,5 @@ export const __testing = {
 	resolveActiveProfile,
 	buildChildArgv,
 	launchPreparedFork,
+	watchFork,
 };

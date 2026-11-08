@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { __testing } from "./index";
@@ -891,5 +891,35 @@ describe("prepared fork cleanup", () => {
 			).rejects.toThrow("its session is kept");
 			expect(existsSync(child)).toBe(true);
 		});
+	});
+});
+
+describe("--pull watcher", () => {
+	test("delivers an answer the fork wrote before the launch returned, never the copied parent turns", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "omp-side-pull-"));
+		const child = join(dir, "child.jsonl");
+		const assistant = (text: string) =>
+			`${JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text }] } })}\n`;
+		try {
+			writeFileSync(child, assistant("copied parent answer"));
+			const preparedSize = statSync(child).size;
+			appendFileSync(child, assistant("fork answer"));
+
+			let tick: (() => void) | undefined;
+			const { promise: delivered, resolve } = Promise.withResolvers<string>();
+			const ctx = {
+				setInterval: (fn: () => void) => ((tick = fn), 1),
+				clearTimer: () => {},
+				ui: { notify: () => {} },
+			};
+			__testing.watchFork({ sendMessage: resolve } as never, ctx as never, child, preparedSize);
+			tick?.();
+
+			const text = await delivered;
+			expect(text).toContain("fork answer");
+			expect(text).not.toContain("copied parent answer");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

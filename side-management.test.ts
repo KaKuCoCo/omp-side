@@ -9,6 +9,7 @@ import {
 	manageForks,
 	parseManagementCommand,
 	resolveOnPath,
+	resolveTern,
 	terminalScope,
 	terminalSource,
 	type ForkData,
@@ -559,5 +560,16 @@ describe("resolveOnPath", () => {
 		} finally {
 			rmSync(dir, { recursive: true });
 		}
+	});
+});
+
+describe("resolveTern", () => {
+	test("prefers the tern that started the pane over PATH", () => {
+		const env = { TERN_EXE: "/opt/tern/tern", PATH: "/usr/bin" };
+		expect(resolveTern(env, "linux")).toBe("/opt/tern/tern");
+	});
+
+	test("without TERN_EXE falls back to the bare name", () => {
+		expect(resolveTern({ PATH: "" }, "linux")).toBe("tern");
 	});
 });

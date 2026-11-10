@@ -268,6 +268,7 @@ export function resolveOnPath(names: string[], path = process.env.PATH ?? ""): s
 }
 
 export function resolveTern(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
+	if (env.TERN_EXE) return env.TERN_EXE;
 	const onPath = resolveOnPath(["tern"], env.PATH);
 	if (onPath !== "tern" || platform !== "darwin") return onPath;
 	return existsSync(TERN_APP_BINARY) ? TERN_APP_BINARY : onPath;

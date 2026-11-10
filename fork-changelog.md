@@ -2,6 +2,13 @@
 
 上游：[wolfiesch/omp-side](https://github.com/wolfiesch/omp-side)
 
+## 2026-11-10
+
+### Changed
+- 呼叫 `tern` 時優先使用 pane 環境的 `TERN_EXE`，再找 `PATH`。
+  - 原因：`TERN_EXE` 就是啟動該 pane 的 Tern，不必把 Tern 資料夾加進 `PATH`。
+  - 上游：未回報。
+
 ## 2026-11-08
 
 ### Added

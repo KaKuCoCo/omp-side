@@ -30,8 +30,9 @@ the child does can affect the main conversation unless you ask for its first ans
 - One supported terminal environment:
   - cmux
   - tmux
-  - Tern, with the `tern` CLI on `PATH` or Tern.app in `/Applications`. On Windows, Tern's
-    install folder (with `tern.com`) must be on `PATH`.
+  - Tern, run from a Tern pane: `/side` calls the `tern` that started the pane (`TERN_EXE`), so no
+    `PATH` entry is needed. Without `TERN_EXE` it looks for `tern` on `PATH`, then Tern.app in
+    `/Applications` on macOS.
   - WezTerm with `wezterm cli`
   - Kitty with remote control available through `kitten @`
   - Ghostty on macOS or Linux
